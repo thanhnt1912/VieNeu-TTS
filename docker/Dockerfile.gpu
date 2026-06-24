@@ -36,7 +36,7 @@ WORKDIR /workspace
 # --- Stage: Development ---
 FROM base AS dev
 COPY pyproject.toml uv.lock ./
-RUN uv sync
+RUN uv sync --no-install-project
 
 CMD ["/bin/bash"]
 

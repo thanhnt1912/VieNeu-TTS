@@ -8,7 +8,9 @@ help:
 	@echo "  make setup      - setup environment (uv sync)"
 	@echo "  make run        - run Gradio UI (alias for 'make demo')"
 	@echo "  make stream     - run Web Stream UI (CPU GGUF)"
-	@echo "  make docker-gpu - run docker compose --profile gpu (auto-create .env if needed)"
+	@echo "  make docker-gpu - run docker compose --profile gpu (dev mode, auto-create .env if needed)"
+	@echo "  make docker-prod - run docker compose --profile gpu in production mode (with Traefik)"
+	@echo "  make docker-down - stop all running docker services"
 	@echo "  make clean       - clean artifacts (.venv, cache, ...)"
 	@echo "  make uv          - install uv (standalone)"
 	@echo "  make espeak      - install eSpeak NG (standalone)"
@@ -87,7 +89,7 @@ uv:
 espeak:
 	@echo ">> Installing eSpeak NG..."
 	@if [ "$$(uname -o 2>/dev/null)" = "Msys" ] || [ "$$(uname -o 2>/dev/null)" = "Cygwin" ]; then \
-	   # Try winget first
+	   # Try winget first \
 	   if command -v winget >/dev/null 2>&1; then \
 	       echo "Trying winget..."; \
 	       winget install -e --id eSpeak-NG.eSpeak-NG || { echo "Winget failed/not found. Opening download page..."; start https://github.com/espeak-ng/espeak-ng/releases; }; \
@@ -127,7 +129,19 @@ docker-gpu:
 	  cp .env.example .env; \
 	  echo ">> Created .env from .env.example"; \
 	fi; \
-	docker compose -f docker/docker-compose.yml --profile gpu up
+	docker compose --env-file .env -f docker/docker-compose.yml --profile gpu up
+
+docker-prod:
+	@set -euo pipefail; \
+	if [ ! -f .env ] && [ -f .env.example ]; then \
+	  cp .env.example .env; \
+	  echo ">> Created .env from .env.example"; \
+	fi; \
+	docker compose --env-file .env -f docker/docker-compose.prod.yml --profile gpu up -d --build
+
+docker-down:
+	docker compose --env-file .env -f docker/docker-compose.yml --profile gpu down || true; \
+	docker compose --env-file .env -f docker/docker-compose.prod.yml --profile gpu down || true
 
 # --- Docker Serve (Remote Mode) ---
 docker-build-serve:

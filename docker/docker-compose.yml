@@ -1,8 +1,8 @@
 x-base-config: &base-config
   volumes:
-    - ./:/workspace
-    - huggingface_cache:/root/.cache/huggingface
-    - ./output_audio:/workspace/output_audio
+    - ../:/workspace
+    - /opt/vieneu-caches/huggingface:/root/.cache/huggingface
+    - ../output_audio:/workspace/output_audio
     - uv_cache:/root/.cache/uv
     - pip_cache:/root/.cache/pip
   env_file:
@@ -78,6 +78,5 @@ services:
               capabilities: [gpu]
 
 volumes:
-  huggingface_cache:
   uv_cache:
   pip_cache:

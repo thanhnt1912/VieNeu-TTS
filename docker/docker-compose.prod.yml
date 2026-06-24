@@ -5,6 +5,10 @@ services:
   gpu:
     restart: unless-stopped
     profiles: ["gpu"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.gpu
+      target: prod
     image: ${IMAGE_NAME}:${IMAGE_TAG}
     container_name: vieneu-tts-gpu
     ports:
@@ -17,10 +21,22 @@ services:
               count: all
               capabilities: [gpu]
     volumes:
-      - huggingface_cache:/root/.cache/huggingface
-      - ./output_audio:/workspace/output_audio
+      - /opt/vieneu-caches/huggingface:/root/.cache/huggingface
+      - ../output_audio:/workspace/output_audio
     env_file:
-      - .env
+      - ../.env
+    networks:
+      - default
+      - traefik_cloudflare
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.vieneu-tts.rule=Host(`voice-tts.nguyentracthanh.site`)"
+      - "traefik.http.routers.vieneu-tts.entrypoints=web"
+      - "traefik.http.routers.vieneu-tts.middlewares=vieneu-tts-auth"
+      - "traefik.http.middlewares.vieneu-tts-auth.basicauth.users=thanhnt.usth@gmail.com:$$apr1$$U3w5MtC3$$/cmb6IAqFn.BR2EdvueEx0"
+      - "traefik.http.services.vieneu-tts.loadbalancer.server.port=7860"
+      - "traefik.docker.network=traefik_cloudflare"
 
-volumes:
-  huggingface_cache:
+networks:
+  traefik_cloudflare:
+    external: true
