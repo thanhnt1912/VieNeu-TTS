@@ -1,186 +1,107 @@
-# 🦜 Hướng dẫn Fine-tune VieNeu-TTS (LoRA)
+# 🦜 Fine-tune VieNeu-TTS v3 Turbo bằng LoRA — một giọng
 
-Thư mục này chứa toàn bộ công cụ cần thiết để bạn huấn luyện (fine-tune) mô hình VieNeu-TTS với giọng nói của riêng mình bằng phương pháp **LoRA (Low-Rank Adaptation)**.
+Thư mục này dạy **VieNeu-TTS v3 Turbo** đọc bằng **một giọng** của bạn với **LoRA**: chỉ vài triệu tham số được học, model gốc giữ nguyên, train được trên một GPU phổ thông (~6 GB VRAM với cấu hình mặc định).
 
-## ⚙️ Cài đặt (Setup)
+Toàn bộ quy trình dựa trên chính SDK `vieneu`: dữ liệu được chuẩn hoá, phiên âm và mã hoá **giống hệt lúc suy luận**, nên model sau khi merge dùng được ngay với `Vieneu(mode="v3turbo")`.
 
-Nếu bạn chưa có sẵn mã nguồn, hãy thực hiện cài đặt môi trường:
+**Cách nó hoạt động, ngắn gọn:** mỗi clip được mã hoá thành codec codes (nhãn) và một speaker embedding 192 chiều; model học sinh ra codes từ phiên âm + embedding đó, **không dùng clip tham chiếu trong ngữ cảnh**. Giọng sau fine-tune = LoRA + embedding của giọng đó, nên khi dùng chỉ cần đóng gói một embedding (bước 4), không cần audio mẫu.
+
+> **Bao nhiêu dữ liệu?** v3 Turbo đã clone giọng tức thì từ một clip **vài giây**, nên chỉ fine-tune khi cần bám giọng chặt hơn clone, một phong cách đọc đặc thù (đọc truyện, tin tức, thuyết minh…), hoặc sửa cách đọc trên một miền văn bản riêng. Với một giọng, **10–30 phút** audio sạch (100–300 câu khác nhau) là đủ; câu đa dạng quan trọng hơn tổng thời lượng. Data ít thì rủi ro là overfit chứ không phải thiếu: giữ eval bật và dừng khi eval loss ngừng giảm.
+>
+> Muốn nhiều giọng? Train mỗi giọng một LoRA riêng — đơn giản và ổn định hơn nhồi nhiều giọng vào một adapter.
+
+## ⚙️ Cài đặt
 
 ```bash
 git clone https://github.com/pnnbao97/VieNeu-TTS.git
 cd VieNeu-TTS
-uv sync
+uv sync --extra finetune        # torch, transformers, peft, accelerate (cần GPU CUDA để train)
 ```
 
-## 📋 Quy trình huấn luyện (Workflow)
+## 1. Chuẩn bị dữ liệu
 
-Để đạt được kết quả tốt nhất, bạn cần đi qua các bước sau:
-
-### 1. Chuẩn bị dữ liệu (`dataset/`)
-Bạn cần chuẩn bị:
-- Thư mục `finetune/dataset/raw_audio/`: Chứa các file âm thanh (.wav) của người nói. Độ dài mỗi file nên trong khoảng từ 3-15 giây để chất lượng finetune đạt tối đa. Theo kinh nghiệm của chúng tôi, tổng thời lượng nên trong khoảng từ 2-4 giờ để model có thể học hết các đặc điểm của giọng mẫu.
-- File `finetune/dataset/metadata.csv`: Chứa thông tin văn bản tương ứng với audio. Định dạng: `file_name|text` (ví dụ: `audio_001.wav|Xin chào Việt Nam.`).
-
-*Mẹo: Nếu chưa có dữ liệu, bạn có thể chạy `uv run python finetune/data_scripts/get_hf_sample.py` để tải dữ liệu mẫu.*
-
-### 2. Tiền xử lý và Làm sạch dữ liệu
-Chạy các script sau theo thứ tự:
-
-1.  **Lọc dữ liệu (`filter_data.py`)**: Loại bỏ các đoạn âm thanh quá ngắn, quá dài hoặc văn bản chứa ký tự không hợp lệ.
-    ```bash
-    uv run python finetune/data_scripts/filter_data.py
-    ```
-    *Kết quả: Tạo ra file `metadata_cleaned.csv`.*
-
-2.  **Mã hóa âm thanh (`encode_data.py`)**: Chuyển đổi audio sang dạng mã hóa của NeuCodec để mô hình LLM có thể học được.
-    ```bash
-    uv run python finetune/data_scripts/encode_data.py
-    ```
-    *Kết quả: Tạo ra file `metadata_encoded.csv`.*
-
-### 3. Cấu hình huấn luyện (`configs/lora_config.py`)
-Mở file `finetune/configs/lora_config.py` để điều chỉnh các thông số:
-- `model`: Chọn base model (vd: `pnnbao-ump/VieNeu-TTS-0.3B`).
-- `max_steps`: Số bước huấn luyện (mặc định 5000 là đủ cho giọng đơn lẻ).
-- `learning_rate`: Tốc độ học (mặc định là `2e-4`).
-
-### 4. Bắt đầu Huấn luyện (`train.py`)
-Chạy script huấn luyện chính:
-```bash
-uv run python finetune/train.py
 ```
-Mô hình sẽ được lưu định kỳ vào thư mục `finetune/output/`.
+finetune/dataset/
+  metadata.csv        mỗi dòng: file_name|text
+  raw_audio/          các file audio được nhắc trong metadata.csv
+```
 
----
-
-## 📓 Sử dụng Notebook (Khuyên dùng)
-Nếu bạn không quen sử dụng script console, chúng tôi cung cấp file Notebook `finetune_VieNeu-TTS.ipynb`. File này đã tích hợp sẵn mọi bước từ chuẩn bị đến huấn luyện, cực kỳ dễ theo dõi trên Google Colab hoặc máy cục bộ.
-
----
-
-## 🚀 Sử dụng LoRA sau khi huấn luyện
-
-Sau khi huấn luyện xong, bạn sẽ có các file adapter (vd: `adapter_model.bin`). Bạn có thể:
-
-1.  **Sử dụng trực tiếp trong Gradio**: 
-    - Upload thư mục kết quả trong `output/` lên HuggingFace.
-    - Nhập Repo ID vào tab **LoRA Adapter** trong ứng dụng Gradio.
-2.  **Sử dụng trong Code**:
-    ```python
-    vieneu.load_lora_adapter("path/to/your/lora_folder")
-    ```
-
----
-
-## 📦 Tạo `voices.json` cho Model của bạn (Khuyên dùng!)
-
-Khi upload model fine-tuned lên HuggingFace, bạn **nên kèm theo file `voices.json`** để người dùng có thể sử dụng model của bạn mà **không cần cung cấp reference audio**.
-
-### Tại sao cần `voices.json`?
-
-- ✅ Người dùng chỉ cần: `vieneu = Vieneu(backbone_repo="your-username/your-model")`
-- ✅ Không cần upload/chỉ định file audio mẫu nữa
-- ✅ Model "portable" - mang theo giọng của nó
-- ✅ Trải nghiệm tốt hơn cho người dùng cuối
-
-### Cách tạo `voices.json`:
-
-#### Bước 1: Chuẩn bị audio mẫu
-
-Chọn 1 file audio đại diện cho giọng nói đã fine-tune (3-10 giây, chất lượng tốt):
+- **Tất cả clip phải là cùng một người nói.** Đây là ràng buộc duy nhất của pipeline — một LoRA là một giọng.
+- Mỗi clip **1–20 giây**, nội dung đúng với `text` (kể cả dấu câu). Clip dài hơn hãy cắt nhỏ trước.
+- Audio sạch, ít vang, không nhạc nền. Tần số lấy mẫu bất kỳ, mono hay stereo đều được.
 
 ```bash
-# Ví dụ: Chọn file từ dataset
-cp finetune/dataset/raw_audio/best_sample.wav reference.wav
+uv run python finetune/prepare_dataset.py --dataset-dir finetune/dataset
 ```
 
-#### Bước 2: Chạy script tạo `voices.json`
+Script chạy trên CPU, không cần torch: phiên âm bằng sea-g2p, mã hoá audio bằng codec MOSS (ONNX) và trích speaker embedding 192 chiều của từng clip. Kết quả là `finetune/dataset/train.parquet` (cột `phones, codes, speaker_embedding, duration, text, file_name`).
+
+## 2. Train LoRA
 
 ```bash
-uv run python finetune/create_voices_json.py \
-  --audio reference.wav \
-  --text "Đây là văn bản chính xác của audio mẫu." \
-  --name my_voice \
-  --description "Giọng nữ miền Nam, trẻ trung"
+uv run python finetune/train_lora.py --data finetune/dataset/train.parquet --run my_voice --merge
 ```
 
-**Lưu ý:** `--text` phải **khớp chính xác 100%** với nội dung audio (kể cả dấu câu).
+Mặc định: LoRA rank 16 trên toàn bộ attention và MLP của backbone, learning rate 2e-4, 3 epoch, batch hiệu dụng 16, bf16. Vài tuỳ chọn hay dùng:
 
-File `voices.json` sẽ được tạo ra với cấu trúc:
-```json
-{
-  "default_voice": "my_voice",
-  "presets": {
-    "my_voice": {
-      "codes": [234, 123, 456, ...],
-      "text": "Đây là văn bản chính xác của audio mẫu.",
-      "description": "Giọng nữ miền Nam, trẻ trung"
-    }
-  }
-}
+| Tuỳ chọn | Ý nghĩa |
+|---|---|
+| `--epochs 3` / `--max-steps N` | thời lượng train |
+| `--r 16 --alpha 32` | dung lượng LoRA; giọng khó hoặc data nhiều thì tăng `--r 32` |
+| `--target all` | thêm LoRA cho acoustic decoder (chất giọng bám sát hơn, cần data nhiều hơn) |
+| `--grad-checkpoint` | tiết kiệm VRAM khi tăng `--batch-size` hoặc `--max-length` |
+| `--merge` | ghi thêm model đầy đủ đã merge ở cuối |
+
+Theo dõi log: `audio` là cross-entropy trung bình của 16 codebook, `acc_cb0` là độ chính xác top-1 của codebook đầu. Trên pipeline đúng, `acc_cb0` phải ở mức 0.2–0.4 ngay từ bước đầu và tăng dần; nếu gần 0 thì dữ liệu có vấn đề (phiên âm hoặc codes không khớp audio).
+
+Kết quả nằm trong `finetune/output/my_voice/`:
+
+```
+adapter/        LoRA adapter (vài MB) — dùng với merge_lora.py
+checkpoint-*/   adapter trung gian
+merged/         model đầy đủ, đúng bố cục repo chính thức (khi có --merge)
 ```
 
-#### Bước 3: Upload lên HuggingFace
-
-**Option A: Upload LoRA trực tiếp**
+## 3. Merge model
 
 ```bash
-# Copy voices.json vào thư mục output LoRA
-cp voices.json finetune/output/your_run_name/
-
-# Upload toàn bộ lên HF
-huggingface-cli upload your-username/your-lora-model finetune/output/your_run_name
+uv run python finetune/merge_lora.py --adapter finetune/output/my_voice/adapter --out finetune/output/my_voice/merged
+# đẩy lên Hugging Face: thêm --push-to-hub your-name/VieNeu-TTS-v3-Turbo-my-voice [--private]
 ```
 
-**Option B: Upload Merged Model (khuyên dùng cho production)**
+Model merge chạy trên **GPU (PyTorch)**. Đường CPU/ONNX của SDK dùng đồ thị đã export sẵn của model gốc, nên chưa nhận model fine-tune.
 
-1. **Merge LoRA vào base model:**
-   ```bash
-   uv run python finetune/merge_lora.py \
-     --base_model pnnbao-ump/VieNeu-TTS-0.3B \
-     --adapter finetune/output/your_run_name \
-     --output finetune/output/merged_model
-   ```
+## 4. Đóng gói giọng và dùng
 
-2. **Copy `voices.json` vào thư mục merged:**
-   ```bash
-   cp voices.json finetune/output/merged_model/
-   ```
+Lấy một clip 3–8 giây của **đúng người nói đó** (một clip trong dataset cũng được) để tạo speaker embedding và ghi thành giọng dựng sẵn đi kèm model:
 
-3. **Upload lên HF:**
-   ```bash
-   huggingface-cli upload your-username/your-model finetune/output/merged_model
-   ```
+```bash
+uv run python finetune/make_voice.py --audio ref.wav --name "Giọng của tôi" \
+    --description "Nữ · Bắc · Phong cách tự nhiên" --gender female \
+    --out finetune/output/my_voice/merged
+```
 
-#### Bước 4: Người dùng cuối sử dụng
-
-Giờ đây, người dùng chỉ cần:
+Lệnh này ghi `voices_v3_turbo.json` vào thư mục model — chỉ speaker embedding, **không có mã tham chiếu**, đúng như lúc train. SDK tự nạp file đó từ thư mục local hoặc repo Hub, cộng thêm vào các giọng có sẵn, và giọng bạn đặt thành mặc định:
 
 ```python
 from vieneu import Vieneu
-
-# Khởi tạo với model của bạn
-vieneu = Vieneu(backbone_repo="your-username/your-model")
-
-# Tổng hợp ngay - KHÔNG CẦN truyền voice!
-audio = vieneu.infer("Xin chào, tôi là giọng nói custom!")
-
-vieneu.save(audio, "output.wav")
+tts = Vieneu(mode="v3turbo", backbone_repo="finetune/output/my_voice/merged")   # hoặc "your-name/…"
+audio = tts.infer("Xin chào, đây là giọng đã fine-tune.", voice="Giọng của tôi")
+tts.save(audio, "out.wav")
 ```
 
-SDK sẽ tự động:
-1. Tải `voices.json` từ repo
-2. Sử dụng `default_voice` được chỉ định
-3. Người dùng không cần lo lắng về reference audio
+Lưu ý: model merge được dạy cho **một giọng**; muốn nó clone giọng khác thì dùng model gốc. (`make_voice.py --with-ref-codes` chỉ dành cho đóng gói giọng cho model gốc.)
 
+## Cấu trúc code
 
----
-
-## 🦜 Bí kíp để giọng nói hay (Tips)
-
-1.  **Chất lượng Audio**: Đây là yếu tố quan trọng nhất. Audio phải sạch, không có tiếng vang (reverb), không có nhạc nền hoặc tiếng ồn.
-2.  **Nội dung đa dạng**: Cố gắng có đa dạng các loại câu (câu hỏi, câu cảm thán, câu khẳng định) để mô hình học được biểu cảm.
-3.  **Dấu câu chính xác**: Hãy đảm bảo văn bản trong `metadata.csv` khớp 100% với những gì người nói phát âm, kể cả các dấu ngắt nghỉ.
-4.  **Hardware**: Khuyên dùng GPU có bộ nhớ từ 12GB VRAM trở lên (như RTX 3060, 4060 Ti).
-
----
+```
+finetune/
+  prepare_dataset.py   audio + text (một người nói)  →  train.parquet
+  train_lora.py        train LoRA (peft)
+  merge_lora.py        adapter + base  →  model đầy đủ, tuỳ chọn push Hub
+  make_voice.py        clip  →  voices_v3_turbo.json (speaker embedding, không mã tham chiếu)
+  vieneu_lora/
+    data.py            dựng chuỗi token 2 chiều và nhãn từ một hàng dữ liệu (không ref)
+    model.py           forward teacher-forcing + loss trên model của SDK
+    lora.py            gắn, lưu, nạp, merge, export LoRA
+```
