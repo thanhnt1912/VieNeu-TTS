@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: help setup setup-gpu setup-cpu setup-finetune demo run stream docker-cpu docker-gpu docker-build-cpu docker-build-gpu check clean
+.PHONY: help setup setup-gpu setup-cpu setup-finetune demo run stream docker-cpu docker-gpu docker-build-cpu docker-build-gpu docker-prod docker-down check clean
 
 help:
 	@echo "Targets:"
@@ -137,6 +137,15 @@ docker-build-cpu:
 
 docker-build-gpu:
 	docker build -t pnnbao/vieneu-tts:gpu -f docker/Dockerfile.gpu .
+
+docker-prod:
+	@set -euo pipefail; \
+	if [ ! -f .env ] && [ -f .env.example ]; then cp .env.example .env; echo ">> Created .env from .env.example"; fi; \
+	docker compose -f docker/docker-compose.prod.yml --profile gpu up -d
+
+docker-down:
+	@docker compose -f docker/docker-compose.prod.yml --profile gpu --profile api down 2>/dev/null || true; \
+	docker compose -f docker/docker-compose.yml --profile gpu --profile cpu --profile api-gpu --profile api-cpu down 2>/dev/null || true
 
 # --- Docker Serve (LEGACY v1/v2 LMDeploy API server) ---
 docker-build-serve:

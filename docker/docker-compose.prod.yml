@@ -9,13 +9,14 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.gpu
       target: prod
-    image: ${IMAGE_NAME}:${IMAGE_TAG}
+    image: ${IMAGE_NAME:-vieneu-tts}:${IMAGE_TAG:-latest}
     container_name: vieneu-tts-gpu
     ports:
-      - "${PORT}:7860"
+      - "${PORT:-7860}:7860"
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
+      - HF_HOME=/home/app/.cache/huggingface
     deploy:
       resources:
         reservations:
@@ -24,21 +25,21 @@ services:
               count: all
               capabilities: [gpu]
     volumes:
-      - /opt/vieneu-caches/huggingface:/root/.cache/huggingface
+      - huggingface_cache:/home/app/.cache/huggingface
       - ../output_audio:/workspace/output_audio
     env_file:
       - ../.env
     networks:
-      - default
-      - traefik_cloudflare
+      - proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.vieneu-tts.rule=Host(`voice-tts.nguyentracthanh.site`)"
+      - "traefik.http.routers.vieneu-tts.rule=Host(`voice-tts.ngtrac.io.vn`)"
       - "traefik.http.routers.vieneu-tts.entrypoints=web"
       - "traefik.http.routers.vieneu-tts.middlewares=vieneu-tts-auth"
       - "traefik.http.middlewares.vieneu-tts-auth.basicauth.users=thanhnt.usth@gmail.com:$$apr1$$U3w5MtC3$$/cmb6IAqFn.BR2EdvueEx0"
       - "traefik.http.services.vieneu-tts.loadbalancer.server.port=7860"
-      - "traefik.docker.network=traefik_cloudflare"
+      - "traefik.docker.network=proxy"
+
   # ========================================================
   # GPU Production — OpenAI-compatible streaming API (same image, other command)
   #   docker compose -f docker/docker-compose.prod.yml --profile api up
@@ -46,7 +47,11 @@ services:
   api:
     restart: unless-stopped
     profiles: ["api"]
-    image: ${IMAGE_NAME}:${IMAGE_TAG}
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.gpu
+      target: prod
+    image: ${IMAGE_NAME:-vieneu-tts}:${IMAGE_TAG:-latest}
     container_name: vieneu-tts-api
     command: ["python", "-m", "apps.openai_speech"]
     ports:
@@ -57,6 +62,7 @@ services:
       - VIENEU_MAX_STREAMS=${VIENEU_MAX_STREAMS:-16}
       - VIENEU_QUEUE=${VIENEU_QUEUE:-16}
       - VIENEU_API_KEY=${VIENEU_API_KEY:-}
+      - HF_HOME=/home/app/.cache/huggingface
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).status == 200 else 1)"]
       interval: 15s
@@ -71,10 +77,21 @@ services:
               count: all
               capabilities: [gpu]
     volumes:
-      - huggingface_cache:/root/.cache/huggingface
+      - huggingface_cache:/home/app/.cache/huggingface
     env_file:
-      - .env
+      - ../.env
+    networks:
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.vieneu-api.rule=Host(`api-voice-tts.ngtrac.io.vn`)"
+      - "traefik.http.routers.vieneu-api.entrypoints=web"
+      - "traefik.http.services.vieneu-api.loadbalancer.server.port=8000"
+      - "traefik.docker.network=proxy"
+
+volumes:
+  huggingface_cache:
 
 networks:
-  traefik_cloudflare:
+  proxy:
     external: true

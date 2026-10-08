@@ -28,7 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 RUN (userdel -r ubuntu 2>/dev/null || true) && (groupdel ubuntu 2>/dev/null || true) \
-    && useradd --create-home --uid 1000 app && mkdir -p /workspace /opt/venv && chown -R app:app /workspace /opt/venv
+    && useradd --create-home --uid 1000 app && mkdir -p /workspace /opt/venv /home/app/.cache/huggingface && chown -R app:app /workspace /opt/venv /home/app
 WORKDIR /workspace
 
 # Dependencies only, wheels only (no setup.py execution), no project build: the app
@@ -46,7 +46,7 @@ FROM base AS prod
 COPY --chown=app:app src/ src/
 COPY --chown=app:app apps/ apps/
 COPY --chown=app:app config.yaml ./
-COPY --chown=app:app examples/audio_ref/ examples/audio_ref/
+COPY --chown=app:app examples/ examples/
 USER app
 EXPOSE 7860
 CMD ["python", "apps/gradio_main.py"]
